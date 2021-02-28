@@ -51,7 +51,7 @@ The jsoncons implementation differs from Stefan Goessner's JavaScript implementa
 - Wildcards are allowed in the dot notation
 - Unions of separate JSONPath expressions are allowed, e.g.
 
-    $..[@.firstName,@.address.city]
+    $..['firstName',@.address.city]
 
 - Options are provided to exclude results corresponding to duplicate paths, and to sort results according to paths.
 
@@ -91,11 +91,11 @@ Recursively select all book titles under '$.store':
 
 Union of a subset of books identified by index:
 
-    $.store[book[0],book[1],book[3]]
+    $.store[@.book[0],@.book[1],@.book[3]]
 
 Union of the fourth book and all books with price > 10:
 
-    $.store[book[3],book[?(@.price > 10)]]
+    $.store[@.book[3],@.book[?(@.price > 10)]]
 
 JSONPath|       Description
 --------|--------------------------------
@@ -468,38 +468,42 @@ int main()
     json data = json::parse(is);
 
     json result1 = expr.evaluate(data);
-    std::cout << "(1) " << pretty_print(result1) << "\n\n";
+    std::cout << "(1)\n" << pretty_print(result1) << "\n\n";
 
     json result2 = expr.evaluate(data, jsonpath::result_options::path);
-    std::cout << "(2) " << pretty_print(result2) << "\n\n";
+    std::cout << "(2)\n" << pretty_print(result2) << "\n\n";
 
     json result3 = expr.evaluate(data, jsonpath::result_options::value | jsonpath::result_options::nodups);
-    std::cout << "(3) " << pretty_print(result3) << "\n\n";
+    std::cout << "(3)\n" << pretty_print(result3) << "\n\n";
 
     json result4 = expr.evaluate(data, jsonpath::result_options::nodups);
-    std::cout << "(4) " << pretty_print(result4) << "\n\n";
+    std::cout << "(4)\n" << pretty_print(result4) << "\n\n";
 }
 ```
 Output:
 ```
-(1) [
+(1) 
+[
     "The Night Watch",
     "The Night Watch",
     "The Night Watch"
 ]
 
-(2) [
+(2) 
+[
     "$['books'][1]['title']",
     "$['books'][1]['title']",
     "$['books'][3]['title']"
 ]
 
-(3) [
+(3) 
+[
     "The Night Watch",
     "The Night Watch"
 ]
 
-(4) [
+(4) 
+[
     "$['books'][1]['title']",
     "$['books'][3]['title']"
 ]
