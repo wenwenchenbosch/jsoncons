@@ -424,8 +424,8 @@ private:
 
     static constexpr size_t default_max_buffer_length = 16384;
 
-    basic_default_json_visitor<CharT> default_visitor_;
-
+    basic_default_json_visitor<raw_char_type> default_visitor_;
+    json_visitor_adaptor<raw_char_type,char_type> visitor_adaptor_;
     basic_json_visitor<CharT>& visitor_;
 
     basic_json_parser<raw_char_type,Allocator> parser_;
@@ -446,10 +446,10 @@ public:
     template <class Source>
     explicit basic_json_raw_reader(Source&& source, const Allocator& alloc = Allocator())
         : basic_json_raw_reader(std::forward<Source>(source),
-                            default_visitor_,
-                            basic_json_decode_options<CharT>(),
-                            default_json_parsing(),
-                            alloc)
+                                default_visitor_,
+                                basic_json_decode_options<CharT>(),
+                                default_json_parsing(),
+                                alloc)
     {
     }
 
@@ -458,10 +458,10 @@ public:
                       const basic_json_decode_options<CharT>& options, 
                       const Allocator& alloc = Allocator())
         : basic_json_raw_reader(std::forward<Source>(source),
-                            default_visitor_,
-                            options,
-                            default_json_parsing(),
-                            alloc)
+                                default_visitor_,
+                                options,
+                                default_json_parsing(),
+                                alloc)
     {
     }
 
@@ -470,10 +470,10 @@ public:
                       std::function<bool(json_errc,const ser_context&)> err_handler, 
                       const Allocator& alloc = Allocator())
         : basic_json_raw_reader(std::forward<Source>(source),
-                            default_visitor_,
-                            basic_json_decode_options<CharT>(),
-                            err_handler,
-                            alloc)
+                                default_visitor_,
+                                basic_json_decode_options<CharT>(),
+                                err_handler,
+                                alloc)
     {
     }
 
@@ -483,10 +483,10 @@ public:
                       std::function<bool(json_errc,const ser_context&)> err_handler, 
                       const Allocator& alloc = Allocator())
         : basic_json_raw_reader(std::forward<Source>(source),
-                            default_visitor_,
-                            options,
-                            err_handler,
-                            alloc)
+                                default_visitor_,
+                                options,
+                                err_handler,
+                                alloc)
     {
     }
 
@@ -495,10 +495,10 @@ public:
                       basic_json_visitor<CharT>& visitor, 
                       const Allocator& alloc = Allocator())
         : basic_json_raw_reader(std::forward<Source>(source),
-                            visitor,
-                            basic_json_decode_options<CharT>(),
-                            default_json_parsing(),
-                            alloc)
+                                visitor,
+                                basic_json_decode_options<CharT>(),
+                                default_json_parsing(),
+                                alloc)
     {
     }
 
@@ -508,10 +508,10 @@ public:
                       const basic_json_decode_options<CharT>& options, 
                       const Allocator& alloc = Allocator())
         : basic_json_raw_reader(std::forward<Source>(source),
-                            visitor,
-                            options,
-                            default_json_parsing(),
-                            alloc)
+                                visitor,
+                                options,
+                                default_json_parsing(),
+                                alloc)
     {
     }
 
@@ -521,21 +521,22 @@ public:
                       std::function<bool(json_errc,const ser_context&)> err_handler, 
                       const Allocator& alloc = Allocator())
         : basic_json_raw_reader(std::forward<Source>(source),
-                            visitor,
-                            basic_json_decode_options<CharT>(),
-                            err_handler,
-                            alloc)
+                                visitor,
+                                basic_json_decode_options<CharT>(),
+                                err_handler,
+                                alloc)
     {
     }
 
     template <class Source>
     basic_json_raw_reader(Source&& source,
-                      basic_json_visitor<CharT>& visitor, 
-                      const basic_json_decode_options<CharT>& options,
-                      std::function<bool(json_errc,const ser_context&)> err_handler, 
-                      const Allocator& alloc = Allocator(),
-                      typename std::enable_if<!std::is_constructible<jsoncons::basic_string_view<CharT>,Source>::value>::type* = 0)
-       : visitor_(visitor),
+                          basic_json_visitor<CharT>& visitor, 
+                          const basic_json_decode_options<CharT>& options,
+                          std::function<bool(json_errc,const ser_context&)> err_handler, 
+                          const Allocator& alloc = Allocator(),
+                          typename std::enable_if<!std::is_constructible<jsoncons::basic_string_view<CharT>,Source>::value>::type* = 0)
+       : visitor_adaptor_(visitor), 
+         visitor_(std::is_same<char_type,raw_char_type>::value ? visitor : visitor_adaptor_),         
          parser_(options,err_handler,alloc),
          source_(std::forward<Source>(source)),
          eof_(false),
@@ -549,12 +550,13 @@ public:
 
     template <class Source>
     basic_json_raw_reader(Source&& source,
-                      basic_json_visitor<CharT>& visitor, 
-                      const basic_json_decode_options<CharT>& options,
-                      std::function<bool(json_errc,const ser_context&)> err_handler, 
-                      const Allocator& alloc = Allocator(),
-                      typename std::enable_if<std::is_constructible<jsoncons::basic_string_view<CharT>,Source>::value>::type* = 0)
-       : visitor_(visitor),
+                          basic_json_visitor<CharT>& visitor, 
+                          const basic_json_decode_options<CharT>& options,
+                          std::function<bool(json_errc,const ser_context&)> err_handler, 
+                          const Allocator& alloc = Allocator(),
+                          typename std::enable_if<std::is_constructible<jsoncons::basic_string_view<CharT>,Source>::value>::type* = 0)
+       : visitor_adaptor_(visitor), 
+         visitor_(std::is_same<char_type,raw_char_type>::value ? visitor : visitor_adaptor_),         
          parser_(options,err_handler,alloc),
          eof_(false),
          buffer_length_(0),
@@ -563,13 +565,16 @@ public:
          encoding_(encoding_kind::undetected)
     {
         jsoncons::basic_string_view<CharT> sv(std::forward<Source>(source));
-        auto result = unicons::skip_bom(sv.begin(), sv.end());
-        if (result.ec != unicons::encoding_errc())
+
+        auto result = detect_json_encoding(sv.data(), sv.size());
+        if (result.encoding == encoding_kind::undetected)
         {
-            JSONCONS_THROW(ser_error(result.ec,parser_.line(),parser_.column()));
+            JSONCONS_THROW(ser_error(json_errc::illegal_codepoint,parser_.line(),parser_.column()));
         }
-        std::size_t offset = result.it - sv.begin();
-        parser_.update(sv.data()+offset,sv.size()-offset);
+        encoding_ = result.encoding;
+
+        std::error_code ec;
+        update_parser(sv.data()+result.offset, sv.size()-result.offset, ec);
     }
 
     std::size_t buffer_length() const
@@ -766,12 +771,17 @@ private:
                 return;
             }
             encoding_ = result.encoding;
-            parser_.update(raw_buffer_.data()+result.offset,raw_buffer_.size()-result.offset);
+            update_parser(raw_buffer_.data()+result.offset,raw_buffer_.size()-result.offset, ec);
         }
         else
         {
-            parser_.update(raw_buffer_.data(),raw_buffer_.size());
+            update_parser(raw_buffer_.data(),raw_buffer_.size(), ec);
         }
+    }
+
+    void update_parser(const raw_char_type* data, std::size_t length, std::error_code& )
+    {
+        parser_.update(data,length);
     }
 
     static detect_encoding_result detect_json_encoding(const raw_char_type* data, std::size_t length)
