@@ -32,7 +32,7 @@ namespace cbor {
     {
         using char_type = typename T::char_type;
         basic_cbor_encoder<jsoncons::bytes_sink<Container>> encoder(v, options);
-        auto adaptor = make_json_visitor_adaptor<basic_json_visitor<char_type>>(encoder);
+        auto adaptor = make_json_visitor_adaptor<char_type>(encoder);
         j.dump(adaptor);
     }
 
@@ -61,7 +61,7 @@ namespace cbor {
     {
         using char_type = typename T::char_type;
         cbor_stream_encoder encoder(os, options);
-        auto adaptor = make_json_visitor_adaptor<basic_json_visitor<char_type>>(encoder);
+        auto adaptor = make_json_visitor_adaptor<char_type>(encoder);
         j.dump(adaptor);
     }
 
@@ -94,7 +94,7 @@ namespace cbor {
     {
         using char_type = typename T::char_type;
         basic_cbor_encoder<bytes_sink<Container>,TempAllocator> encoder(v, options, temp_alloc);
-        auto adaptor = make_json_visitor_adaptor<basic_json_visitor<char_type>>(encoder);
+        auto adaptor = make_json_visitor_adaptor<char_type>(encoder);
         j.dump(adaptor);
     }
 
@@ -126,7 +126,7 @@ namespace cbor {
     {
         using char_type = typename T::char_type;
         basic_cbor_encoder<binary_stream_sink,TempAllocator> encoder(os, options, temp_alloc);
-        auto adaptor = make_json_visitor_adaptor<basic_json_visitor<char_type>>(encoder);
+        auto adaptor = make_json_visitor_adaptor<char_type>(encoder);
         j.dump(adaptor);
     }
 

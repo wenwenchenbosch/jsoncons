@@ -301,19 +301,22 @@ private:
     }
 };
 
-template <class From,class To>
-class json_visitor_adaptor_base : public From
+template <class CharT,class OtherCharT>
+class json_visitor_adaptor_base : public basic_json_visitor<CharT>
 {
 public:
-    using typename From::string_view_type;
+    using supertype = basic_json_visitor<CharT>;
+    using destination_type = basic_json_visitor<OtherCharT>;
+
+    using typename supertype::string_view_type;
 private:
-    To* destination_;
+    destination_type* destination_;
 
     // noncopyable
     json_visitor_adaptor_base(const json_visitor_adaptor_base&) = delete;
     json_visitor_adaptor_base& operator=(const json_visitor_adaptor_base&) = delete;
 public:
-    json_visitor_adaptor_base(To& visitor)
+    json_visitor_adaptor_base(basic_json_visitor<OtherCharT>& visitor)
         : destination_(std::addressof(visitor))
     {
     }
@@ -322,7 +325,7 @@ public:
     json_visitor_adaptor_base(json_visitor_adaptor_base&&) = default;
     json_visitor_adaptor_base& operator=(json_visitor_adaptor_base&&) = default;
 
-    To& destination()
+    destination_type& destination()
     {
         return *destination_;
     }
@@ -524,28 +527,29 @@ private:
 
 };
 
-template <class From,class To,class Enable=void>
+template <class CharT,class OtherCharT,class Enable=void>
 class json_visitor_adaptor 
 {
 };
 
-template <class From,class To>
-class json_visitor_adaptor<From,To,typename std::enable_if<jsoncons::detail::is_narrow_character<typename From::char_type>::value &&
-                                                           jsoncons::detail::is_narrow_character<typename To::char_type>::value>::type> : public json_visitor_adaptor_base<From,To>
+template <class CharT,class OtherCharT>
+class json_visitor_adaptor<CharT,OtherCharT,typename std::enable_if<jsoncons::detail::is_narrow_character<CharT>::value &&
+                                                                    jsoncons::detail::is_narrow_character<OtherCharT>::value>::type> : public json_visitor_adaptor_base<CharT,OtherCharT>
 {
-    using supertype = json_visitor_adaptor_base<From,To>;
-    using to_char_type = typename To::char_type;
-    using from_char_type = typename From::char_type;
+    using supertype = json_visitor_adaptor_base<CharT,OtherCharT>;
+    using to_char_type = OtherCharT;
+    using from_char_type = CharT;
 public:
-    using typename From::string_view_type;
+    using typename supertype::string_view_type;
     using supertype::destination;
+    using destination_type = supertype::destination_type;
 private:
 
     // noncopyable
     json_visitor_adaptor(const json_visitor_adaptor&) = delete;
     json_visitor_adaptor& operator=(const json_visitor_adaptor&) = delete;
 public:
-    json_visitor_adaptor(To& visitor)
+    json_visitor_adaptor(destination_type& visitor)
         : supertype(visitor)
     {
     }
@@ -572,21 +576,24 @@ private:
     }
 };
 
-template <class From,class To>
-class json_visitor_adaptor<From,To,typename std::enable_if<!(jsoncons::detail::is_narrow_character<typename From::char_type>::value &&
-                                                             jsoncons::detail::is_narrow_character<typename To::char_type>::value)>::type> : public json_visitor_adaptor_base<From,To>
+template <class CharT,class OtherCharT>
+class json_visitor_adaptor<CharT,OtherCharT,typename std::enable_if<!(jsoncons::detail::is_narrow_character<CharT>::value &&
+                                                                      jsoncons::detail::is_narrow_character<OtherCharT>::value)>::type> : public json_visitor_adaptor_base<CharT,OtherCharT>
 {
-    using supertype = json_visitor_adaptor_base<From,To>;
+    using supertype = json_visitor_adaptor_base<CharT,OtherCharT>;
+
+    std::basic_string<OtherCharT> buffer_;
 public:
-    using typename From::string_view_type;
+    using typename supertype::string_view_type;
     using supertype::destination;
+    using destination_type = supertype::destination_type;
 private:
 
     // noncopyable
     json_visitor_adaptor(const json_visitor_adaptor&) = delete;
     json_visitor_adaptor& operator=(const json_visitor_adaptor&) = delete;
 public:
-    json_visitor_adaptor(To& visitor)
+    json_visitor_adaptor(destination_type& visitor)
         : supertype(visitor)
     {
     }
@@ -598,16 +605,16 @@ public:
 private:
 
     bool visit_key(const string_view_type& name,
-                 const ser_context& context,
-                 std::error_code& ec) override
+                   const ser_context& context,
+                   std::error_code& ec) override
     {
-        std::basic_string<typename To::char_type> target;
-        auto result = unicons::convert(name.begin(),name.end(),std::back_inserter(target),unicons::conv_flags::strict);
+        buffer_.clear();
+        auto result = unicons::convert(name.begin(),name.end(),std::back_inserter(buffer_),unicons::conv_flags::strict);
         if (result.ec != unicons::conv_errc())
         {
             ec = result.ec;
         }
-        return destination().key(target, context, ec);
+        return destination().key(buffer_, context, ec);
     }
 
     bool visit_string(const string_view_type& value,
@@ -615,20 +622,20 @@ private:
                       const ser_context& context,
                       std::error_code& ec) override
     {
-        std::basic_string<typename To::char_type> target;
-        auto result = unicons::convert(value.begin(),value.end(),std::back_inserter(target),unicons::conv_flags::strict);
+        buffer_.clear();
+        auto result = unicons::convert(value.begin(),value.end(),std::back_inserter(buffer_),unicons::conv_flags::strict);
         if (result.ec != unicons::conv_errc())
         {
             JSONCONS_THROW(ser_error(result.ec));
         }
-        return destination().string_value(target, tag, context, ec);
+        return destination().string_value(buffer_, tag, context, ec);
     }
 };
 
-template <class From,class To>
-json_visitor_adaptor<From,To> make_json_visitor_adaptor(To& to)
+template <class CharT,class OtherCharT>
+json_visitor_adaptor<CharT,OtherCharT> make_json_visitor_adaptor(basic_json_visitor<OtherCharT>& to)
 {
-    return json_visitor_adaptor<From, To>(to);
+    return json_visitor_adaptor<CharT, OtherCharT>(to);
 }
 
 using json_filter = basic_json_filter<char>;

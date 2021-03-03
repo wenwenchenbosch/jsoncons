@@ -18,6 +18,7 @@
 #include <jsoncons/source.hpp>
 #include <jsoncons/json_exception.hpp>
 #include <jsoncons/json_visitor.hpp>
+#include <jsoncons/json_filter.hpp>
 #include <jsoncons/json_parser.hpp>
 
 namespace jsoncons {
@@ -36,132 +37,6 @@ struct detect_encoding_result
 {
     encoding_kind encoding;
     std::size_t offset;
-};
-
-// utf8_other_json_input_adapter
-
-template <class CharT>
-class json_utf8_to_other_visitor_adaptor : public json_visitor
-{
-public:
-    using json_visitor::string_view_type;
-private:
-    basic_default_json_visitor<CharT> default_visitor_;
-    basic_json_visitor<CharT>& other_visitor_;
-    //std::function<bool(json_errc,const ser_context&)> err_handler_;
-
-    // noncopyable and nonmoveable
-    json_utf8_to_other_visitor_adaptor(const json_utf8_to_other_visitor_adaptor<CharT>&) = delete;
-    json_utf8_to_other_visitor_adaptor<CharT>& operator=(const json_utf8_to_other_visitor_adaptor<CharT>&) = delete;
-
-public:
-    json_utf8_to_other_visitor_adaptor()
-        : other_visitor_(default_visitor_)
-    {
-    }
-
-    json_utf8_to_other_visitor_adaptor(basic_json_visitor<CharT>& other_visitor/*,
-                                          std::function<bool(json_errc,const ser_context&)> err_handler*/)
-        : other_visitor_(other_visitor)/*,
-          err_handler_(err_handler)*/
-    {
-    }
-
-private:
-
-    void visit_flush() override
-    {
-        other_visitor_.flush();
-    }
-
-    bool visit_begin_object(semantic_tag tag, const ser_context& context, std::error_code& ec) override
-    {
-        return other_visitor_.begin_object(tag, context, ec);
-    }
-
-    bool visit_end_object(const ser_context& context, std::error_code& ec) override
-    {
-        return other_visitor_.end_object(context, ec);
-    }
-
-    bool visit_begin_array(semantic_tag tag, const ser_context& context, std::error_code& ec) override
-    {
-        return other_visitor_.begin_array(tag, context, ec);
-    }
-
-    bool visit_end_array(const ser_context& context, std::error_code& ec) override
-    {
-        return other_visitor_.end_array(context, ec);
-    }
-
-    bool visit_key(const string_view_type& name, const ser_context& context, std::error_code& ec) override
-    {
-        std::basic_string<CharT> target;
-        auto result = unicons::convert(
-            name.begin(), name.end(), std::back_inserter(target), 
-            unicons::conv_flags::strict);
-        if (result.ec != unicons::conv_errc())
-        {
-            JSONCONS_THROW(ser_error(result.ec,context.line(),context.column()));
-        }
-        return other_visitor_.key(target, context, ec);
-    }
-
-    bool visit_string(const string_view_type& value, semantic_tag tag, const ser_context& context, std::error_code& ec) override
-    {
-        std::basic_string<CharT> target;
-        auto result = unicons::convert(
-            value.begin(), value.end(), std::back_inserter(target), 
-            unicons::conv_flags::strict);
-        if (result.ec != unicons::conv_errc())
-        {
-            ec = result.ec;
-            return false;
-        }
-        return other_visitor_.string_value(target, tag, context, ec);
-    }
-
-    bool visit_int64(int64_t value, 
-                        semantic_tag tag, 
-                        const ser_context& context,
-                        std::error_code& ec) override
-    {
-        return other_visitor_.int64_value(value, tag, context, ec);
-    }
-
-    bool visit_uint64(uint64_t value, 
-                         semantic_tag tag, 
-                         const ser_context& context,
-                         std::error_code& ec) override
-    {
-        return other_visitor_.uint64_value(value, tag, context, ec);
-    }
-
-    bool visit_half(uint16_t value, 
-                       semantic_tag tag,
-                       const ser_context& context,
-                       std::error_code& ec) override
-    {
-        return other_visitor_.half_value(value, tag, context, ec);
-    }
-
-    bool visit_double(double value, 
-                         semantic_tag tag,
-                         const ser_context& context,
-                         std::error_code& ec) override
-    {
-        return other_visitor_.double_value(value, tag, context, ec);
-    }
-
-    bool visit_bool(bool value, semantic_tag tag, const ser_context& context, std::error_code& ec) override
-    {
-        return other_visitor_.bool_value(value, tag, context, ec);
-    }
-
-    bool visit_null(semantic_tag tag, const ser_context& context, std::error_code& ec) override
-    {
-        return other_visitor_.null_value(tag, context, ec);
-    }
 };
 
 template<class CharT,class Src=jsoncons::stream_source<CharT>,class Allocator=std::allocator<char>>
@@ -557,7 +432,6 @@ private:
 
     source_type source_;
     bool eof_;
-    bool begin_;
     std::size_t buffer_length_;
     std::size_t raw_buffer_length_;
     std::vector<CharT,char_allocator_type> buffer_;
@@ -665,7 +539,6 @@ public:
          parser_(options,err_handler,alloc),
          source_(std::forward<Source>(source)),
          eof_(false),
-         begin_(true),
          buffer_length_(default_max_buffer_length),
          raw_buffer_length_(default_max_buffer_length),
          buffer_(alloc),
@@ -684,7 +557,6 @@ public:
        : visitor_(visitor),
          parser_(options,err_handler,alloc),
          eof_(false),
-         begin_(false),
          buffer_length_(0),
          raw_buffer_length_(0),
          buffer_(alloc),
@@ -885,9 +757,9 @@ private:
         {
             eof_ = true;
         }
-        else if (begin_)
+        else if (encoding_ == encoding_kind::undetected)
         {
-            auto result = detect_encoding();
+            auto result = detect_json_encoding();
             if (result.encoding == encoding_kind::undetected)
             {
                 ec = json_errc::illegal_codepoint;
@@ -895,7 +767,6 @@ private:
             }
             encoding_ = result.encoding;
             parser_.update(raw_buffer_.data()+result.offset,raw_buffer_.size()-result.offset);
-            begin_ = false;
         }
         else
         {
@@ -903,7 +774,7 @@ private:
         }
     }
 
-    detect_encoding_result detect_encoding()
+    detect_encoding_result detect_json_encoding()
     {
         encoding_kind encoding = encoding_kind::undetected;
         std::size_t offset = 0;
