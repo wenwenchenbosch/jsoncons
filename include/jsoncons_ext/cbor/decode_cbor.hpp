@@ -28,8 +28,10 @@ namespace cbor {
     decode_cbor(const Source& v, 
                 const cbor_decode_options& options = cbor_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         jsoncons::json_decoder<T> decoder;
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_cbor_reader<jsoncons::bytes_source> reader(v, adaptor, options);
         reader.read();
         if (!decoder.is_valid())
@@ -62,8 +64,10 @@ namespace cbor {
     decode_cbor(std::istream& is, 
                 const cbor_decode_options& options = cbor_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         jsoncons::json_decoder<T> decoder;
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         cbor_stream_reader reader(is, adaptor, options);
         reader.read();
         if (!decoder.is_valid())
@@ -95,8 +99,10 @@ namespace cbor {
     decode_cbor(InputIt first, InputIt last,
                 const cbor_decode_options& options = cbor_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         jsoncons::json_decoder<T> decoder;
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_cbor_reader<binary_iterator_source<InputIt>> reader(binary_iterator_source<InputIt>(first, last), adaptor, options);
         reader.read();
         if (!decoder.is_valid())
@@ -132,8 +138,10 @@ namespace cbor {
                 const Source& v, 
                 const cbor_decode_options& options = cbor_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         json_decoder<T,TempAllocator> decoder(temp_alloc);
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_cbor_reader<jsoncons::bytes_source,TempAllocator> reader(v, adaptor, options, temp_alloc);
         reader.read();
         if (!decoder.is_valid())
@@ -168,8 +176,10 @@ namespace cbor {
                 std::istream& is, 
                 const cbor_decode_options& options = cbor_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         json_decoder<T,TempAllocator> decoder(temp_alloc);
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_cbor_reader<jsoncons::binary_stream_source,TempAllocator> reader(is, adaptor, options, temp_alloc);
         reader.read();
         if (!decoder.is_valid())

@@ -542,7 +542,7 @@ class json_visitor_adaptor<CharT,OtherCharT,typename std::enable_if<jsoncons::de
 public:
     using typename supertype::string_view_type;
     using supertype::destination;
-    using destination_type = supertype::destination_type;
+    using destination_type = typename supertype::destination_type;
 private:
 
     // noncopyable
@@ -586,7 +586,7 @@ class json_visitor_adaptor<CharT,OtherCharT,typename std::enable_if<!(jsoncons::
 public:
     using typename supertype::string_view_type;
     using supertype::destination;
-    using destination_type = supertype::destination_type;
+    using destination_type = typename supertype::destination_type;
 private:
 
     // noncopyable
@@ -631,12 +631,6 @@ private:
         return destination().string_value(buffer_, tag, context, ec);
     }
 };
-
-template <class CharT,class OtherCharT>
-json_visitor_adaptor<CharT,OtherCharT> make_json_visitor_adaptor(basic_json_visitor<OtherCharT>& to)
-{
-    return json_visitor_adaptor<CharT, OtherCharT>(to);
-}
 
 using json_filter = basic_json_filter<char>;
 using wjson_filter = basic_json_filter<wchar_t>;

@@ -27,8 +27,11 @@ namespace msgpack {
     decode_msgpack(const Source& v, 
                    const msgpack_decode_options& options = msgpack_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         jsoncons::json_decoder<T> decoder;
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_msgpack_reader<jsoncons::bytes_source> reader(v, adaptor, options);
         reader.read();
         if (!decoder.is_valid())
@@ -61,8 +64,10 @@ namespace msgpack {
     decode_msgpack(std::istream& is, 
                    const msgpack_decode_options& options = msgpack_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         jsoncons::json_decoder<T> decoder;
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         msgpack_stream_reader reader(is, adaptor, options);
         reader.read();
         if (!decoder.is_valid())
@@ -94,8 +99,10 @@ namespace msgpack {
     decode_msgpack(InputIt first, InputIt last,
                 const msgpack_decode_options& options = msgpack_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         jsoncons::json_decoder<T> decoder;
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_msgpack_reader<binary_iterator_source<InputIt>> reader(binary_iterator_source<InputIt>(first, last), adaptor, options);
         reader.read();
         if (!decoder.is_valid())
@@ -131,8 +138,10 @@ namespace msgpack {
                    const Source& v, 
                    const msgpack_decode_options& options = msgpack_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         json_decoder<T,TempAllocator> decoder(temp_alloc);
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_msgpack_reader<jsoncons::bytes_source,TempAllocator> reader(v, adaptor, options, temp_alloc);
         reader.read();
         if (!decoder.is_valid())
@@ -167,8 +176,10 @@ namespace msgpack {
                    std::istream& is, 
                    const msgpack_decode_options& options = msgpack_decode_options())
     {
+        using other_char_type = typename T::char_type;
+
         json_decoder<T,TempAllocator> decoder(temp_alloc);
-        auto adaptor = make_json_visitor_adaptor<char>(decoder);
+        json_visitor_adaptor<char,other_char_type> adaptor(decoder);
         basic_msgpack_reader<jsoncons::binary_stream_source,TempAllocator> reader(is, adaptor, options, temp_alloc);
         reader.read();
         if (!decoder.is_valid())
