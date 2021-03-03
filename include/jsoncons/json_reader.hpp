@@ -759,7 +759,7 @@ private:
         }
         else if (encoding_ == encoding_kind::undetected)
         {
-            auto result = detect_json_encoding();
+            auto result = detect_json_encoding(raw_buffer_.data(), buffer_length_);
             if (result.encoding == encoding_kind::undetected)
             {
                 ec = json_errc::illegal_codepoint;
@@ -774,66 +774,66 @@ private:
         }
     }
 
-    detect_encoding_result detect_json_encoding()
+    static detect_encoding_result detect_json_encoding(const raw_char_type* data, std::size_t length)
     {
         encoding_kind encoding = encoding_kind::undetected;
         std::size_t offset = 0;
 
-        if (raw_buffer_.size() >= 2 && !memcmp(raw_buffer_.data(), bom_utf16le, 2))
+        if (length >= 2 && !memcmp(data, bom_utf16le, 2))
         {
             encoding = encoding_kind::utf16le;
             offset = 2;
         }
-        else if (raw_buffer_.size() >= 2 && !memcmp(raw_buffer_.data(), bom_utf16be, 2))
+        else if (length >= 2 && !memcmp(data, bom_utf16be, 2))
         {
             encoding = encoding_kind::utf16be;
             offset = 2;
         }
-        else if (raw_buffer_.size() >= 4 && !memcmp(raw_buffer_.data(), bom_utf32le, 4))
+        else if (length >= 4 && !memcmp(data, bom_utf32le, 4))
         {
             encoding = encoding_kind::utf32le;
             offset = 4;
         }
-        else if (raw_buffer_.size() >= 4 && !memcmp(raw_buffer_.data(), bom_utf32be, 4))
+        else if (length >= 4 && !memcmp(data, bom_utf32be, 4))
         {
             encoding = encoding_kind::utf32be;
             offset = 4;
         }
-        else if (raw_buffer_.size() >= 3 && !memcmp(raw_buffer_.data(), bom_utf8, 3))
+        else if (length >= 3 && !memcmp(data, bom_utf8, 3))
         {
             encoding = encoding_kind::utf8;
             offset = 3;
         }
         else
         {
-            if (raw_buffer_.size() >= 2 && raw_buffer_[0] == 0 && raw_buffer_[1] == 0)
+            if (length >= 2 && data[0] == 0 && data[1] == 0)
             {
                 encoding = encoding_kind::utf32be;
             }
-            else if (raw_buffer_.size() >= 2 && raw_buffer_[0] == 0 && raw_buffer_[1] != 0)
+            else if (length >= 2 && data[0] == 0 && data[1] != 0)
             {
                 encoding = encoding_kind::utf16be;
             }
-            else if (raw_buffer_.size() >= 4 && raw_buffer_[0] != 0 && raw_buffer_[1] == 0 && 
-                     raw_buffer_[2] == 0 && raw_buffer_[3] == 0)
+            else if (length >= 4 && data[0] != 0 && data[1] == 0 && 
+                     data[2] == 0 && data[3] == 0)
             {
                 encoding = encoding_kind::utf32le;
             }
-            else if (raw_buffer_.size() >= 4 && raw_buffer_[0] != 0 && raw_buffer_[1] == 0 && 
-                     raw_buffer_[2] == 0 && raw_buffer_[3] != 0)
+            else if (length >= 4 && data[0] != 0 && data[1] == 0 && 
+                     data[2] == 0 && data[3] != 0)
             {
                 encoding = encoding_kind::utf16le;
             }
-            else if (raw_buffer_.size() >= 3 && raw_buffer_[0] != 0 && raw_buffer_[1] == 0 && 
-                     raw_buffer_[2] != 0)
+            else if (length >= 3 && data[0] != 0 && data[1] == 0 && 
+                     data[2] != 0)
             {
                 encoding = encoding_kind::utf16le;
             }
-            else if (raw_buffer_.size() >= 2 && raw_buffer_[0] != 0 && raw_buffer_[1] != 0)
+            else if (length >= 2 && data[0] != 0 && data[1] != 0)
             {
                 encoding = encoding_kind::utf8;
             }
-            else if (raw_buffer_.size() >= 1 && raw_buffer_[0] != 0)
+            else if (length >= 1 && data[0] != 0)
             {
                 encoding = encoding_kind::utf8;
             }
