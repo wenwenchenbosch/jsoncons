@@ -238,8 +238,10 @@ namespace jsoncons { namespace jsonpath {
             }
 
             reference get_child(dynamic_resources<Json,JsonReference>& resources,
+                                const std::vector<path_component_type>& path, 
                                 reference root,
-                                reference val) const
+                                reference val,
+                                result_options options) const
             {
                 if (!tail_selector_)
                 {
@@ -247,7 +249,7 @@ namespace jsoncons { namespace jsonpath {
                 }
                 else
                 {
-                    return tail_selector_->get(resources, root, val);
+                    return tail_selector_->get(resources, path, root, val, options);
                 }
             }
 
@@ -320,8 +322,10 @@ namespace jsoncons { namespace jsonpath {
             }
 
             reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
                           reference root,
-                          reference val) const override
+                          reference val,
+                          result_options options) const override
             {
                 //std::cout << "identifier selector val: " << val << ", identifier: " << identifier_  << "\n";
 
@@ -330,7 +334,7 @@ namespace jsoncons { namespace jsonpath {
                     auto it = val.find(identifier_);
                     if (it != val.object_range().end())
                     {
-                        return this->get_child(resources, root, it->value());
+                        return this->get_child(resources, path, root, it->value(), options);
                     }
                     else
                     {
@@ -345,7 +349,7 @@ namespace jsoncons { namespace jsonpath {
                         std::size_t index = (r.value() >= 0) ? static_cast<std::size_t>(r.value()) : static_cast<std::size_t>(static_cast<int64_t>(val.size()) + r.value());
                         if (index < val.size())
                         {
-                            return this->get_child(resources, root, val[index]);
+                            return this->get_child(resources, path, root, val[index], options);
                         }
                         else
                         {
@@ -355,7 +359,7 @@ namespace jsoncons { namespace jsonpath {
                     else if (identifier_ == length_literal<char_type>() && val.size() > 0)
                     {
                         pointer ptr = resources.create_json(val.size());
-                        return this->get_child(resources, root, *ptr);
+                        return this->get_child(resources, path, root, *ptr, options);
                     }
                     else
                     {
@@ -367,7 +371,7 @@ namespace jsoncons { namespace jsonpath {
                     string_view_type sv = val.as_string_view();
                     std::size_t count = unicons::u32_length(sv.begin(), sv.end());
                     pointer ptr = resources.create_json(count);
-                    return this->get_child(resources, root, *ptr);
+                    return this->get_child(resources, path, root, *ptr, options);
                 }
                 else
                 {
@@ -429,8 +433,10 @@ namespace jsoncons { namespace jsonpath {
                 }
             }
             reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& /*path*/, 
                           reference root,
-                          reference val) const override
+                          reference val,
+                          result_options /*options*/) const override
             {
                 (val);
                 (root);
@@ -491,10 +497,12 @@ namespace jsoncons { namespace jsonpath {
             }
 
             reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
                           reference root,
-                          reference current) const override
+                          reference current,
+                          result_options options) const override
             {
-                return this->get_child(resources, root, current);
+                return this->get_child(resources, path, root, current, options);
             }
 
             std::string to_string(int level = 0) const override
@@ -557,8 +565,10 @@ namespace jsoncons { namespace jsonpath {
             }
 
             reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
                           reference root,
-                          reference val) const override
+                          reference val,
+                          result_options options) const override
             {
                 if (val.is_array())
                 {
@@ -569,14 +579,14 @@ namespace jsoncons { namespace jsonpath {
                         //std::cout << "path: " << path << ", val: " << val << ", index: " << index << "\n";
                         //nodes.emplace_back(generate_path(path, index, options),std::addressof(val.at(index)));
                         //nodes.emplace_back(path, std::addressof(val));
-                        return this->get_child(resources, root, val.at(index));
+                        return this->get_child(resources, path, root, val.at(index), options);
                     }
                     else if ((slen + index_) >= 0 && (slen+index_) < slen)
                     {
                         std::size_t index = static_cast<std::size_t>(slen + index_);
                         //std::cout << "path: " << path << ", val: " << val << ", index: " << index << "\n";
                         //nodes.emplace_back(generate_path(path, index ,options),std::addressof(val.at(index)));
-                        return this->get_child(resources, root, val.at(index));
+                        return this->get_child(resources, path, root, val.at(index), options);
                     }
                     else
                     {
@@ -631,33 +641,21 @@ namespace jsoncons { namespace jsonpath {
             }
 
             reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
                           reference root,
-                          reference val) const override
+                          reference val,
+                          result_options options) const override
             {
-                if (val.is_array())
+                std::vector<path_node_type> nodes;
+                node_type ndtype = node_type::multi; // always multi
+                select(resources, path, root, val, nodes, ndtype, options);
+                Json* result = resources.create_json(json_array_arg);
+                result->reserve(val.size());
+                for (auto& item : nodes)
                 {
-                    Json* result = resources.create_json(json_array_arg);
-                    result->reserve(val.size());
-                    for (std::size_t i = 0; i < val.size(); ++i)
-                    {
-                        result->emplace_back(this->get_child(resources, root, val[i]));
-                    }
-                    return *result;
+                    result->emplace_back(std::move(*item.ptr));
                 }
-                else if (val.is_object())
-                {
-                    Json* result = resources.create_json(json_array_arg);
-                    result->reserve(val.size());
-                    for (auto& item : val.object_range())
-                    {
-                        result->emplace_back(this->get_child(resources, root, item.value()));
-                    }
-                    return *result;
-                }
-                else
-                {
-                    return resources.null_value();
-                }
+                return *result;
             }
 
             std::string to_string(int level = 0) const override
@@ -694,7 +692,7 @@ namespace jsoncons { namespace jsonpath {
                         node_type& ndtype,
                         result_options options) const override
             {
-                //std::cout << "wildcard_selector: " << val << "\n";
+                //std::cout << "recursive_selector: " << val << "\n";
                 if (val.is_array())
                 {
                     this->evaluate_tail(resources, path, root, val, nodes, ndtype, options);
@@ -711,7 +709,25 @@ namespace jsoncons { namespace jsonpath {
                         select(resources, generate_path(path, item.key(), options), root, item.value(), nodes, ndtype, options);
                     }
                 }
-                //std::cout << "end wildcard_selector\n";
+                //std::cout << "end recursive_selector\n";            
+            }
+
+            reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
+                          reference root,
+                          reference val,
+                          result_options options) const override
+            {
+                std::vector<path_node_type> nodes;
+                node_type ndtype = node_type::multi; // always multi
+                select(resources, path, root, val, nodes, ndtype, options);
+                Json* result = resources.create_json(json_array_arg);
+                result->reserve(val.size());
+                for (auto& item : nodes)
+                {
+                    result->emplace_back(std::move(*item.ptr));
+                }
+                return *result;
             }
 
             std::string to_string(int level = 0) const override
@@ -762,6 +778,24 @@ namespace jsoncons { namespace jsonpath {
                 {
                     expr.evaluate(resources, path, root, val, callback, options);
                 }
+            }
+
+            reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
+                          reference root,
+                          reference val,
+                          result_options options) const override
+            {
+                std::vector<path_node_type> nodes;
+                node_type ndtype = node_type::multi; // always multi
+                select(resources, path, root, val, nodes, ndtype, options);
+                Json* result = resources.create_json(json_array_arg);
+                result->reserve(val.size());
+                for (auto& item : nodes)
+                {
+                    result->emplace_back(std::move(*item.ptr));
+                }
+                return *result;
             }
 
             std::string to_string(int level = 0) const override
@@ -854,6 +888,15 @@ namespace jsoncons { namespace jsonpath {
                 }
             }
 
+            reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& /*path*/, 
+                          reference /*root*/,
+                          reference /*val*/,
+                          result_options /*options*/) const override
+            {
+                return resources.null_value();
+            }
+
             std::string to_string(int level = 0) const override
             {
                 std::string s;
@@ -912,6 +955,24 @@ namespace jsoncons { namespace jsonpath {
                         this->evaluate_tail(resources, generate_path(path, j.as_string(), options), root, val.at(j.as_string_view()), nodes, ndtype, options);
                     }
                 }
+            }
+
+            reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
+                          reference root,
+                          reference val,
+                          result_options options) const override
+            {
+                std::vector<path_node_type> nodes;
+                node_type ndtype = node_type::multi; // always multi
+                select(resources, path, root, val, nodes, ndtype, options);
+                Json* result = resources.create_json(json_array_arg);
+                result->reserve(val.size());
+                for (auto& item : nodes)
+                {
+                    result->emplace_back(std::move(*item.ptr));
+                }
+                return *result;
             }
 
             std::string to_string(int level = 0) const override
@@ -995,6 +1056,23 @@ namespace jsoncons { namespace jsonpath {
                     }
                 }
             }
+            reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& path, 
+                          reference root,
+                          reference val,
+                          result_options options) const override
+            {
+                std::vector<path_node_type> nodes;
+                node_type ndtype = node_type::multi; // always multi
+                select(resources, path, root, val, nodes, ndtype, options);
+                Json* result = resources.create_json(json_array_arg);
+                result->reserve(val.size());
+                for (auto& item : nodes)
+                {
+                    result->emplace_back(std::move(*item.ptr));
+                }
+                return *result;
+            }
         };
 
         class function_expression final : public selector_base_type
@@ -1024,6 +1102,15 @@ namespace jsoncons { namespace jsonpath {
                     nodes.emplace_back(p, std::addressof(v));
                 };
                 return expr_.evaluate(resources, path, root, val, callback, options);
+            }
+
+            reference get(dynamic_resources<Json,JsonReference>& resources,
+                          const std::vector<path_component_type>& /*path*/, 
+                          reference /*root*/,
+                          reference /*val*/,
+                          result_options /*options*/) const override
+            {
+                return resources.null_value();
             }
 
             std::string to_string(int level = 0) const override

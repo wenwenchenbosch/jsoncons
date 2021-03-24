@@ -2028,11 +2028,10 @@ namespace detail {
                             result_options options) const = 0;
 
         virtual reference get(dynamic_resources<Json,JsonReference>& resources,
-                              reference /*root*/,
-                              reference /*val*/) const 
-        {
-            return resources.null_value();
-        }
+                              const std::vector<path_component_type>& path, 
+                              reference root,
+                              reference val,
+                              result_options options) const  = 0;
 
         virtual void append_selector(std::unique_ptr<selector_base>&&) 
         {
