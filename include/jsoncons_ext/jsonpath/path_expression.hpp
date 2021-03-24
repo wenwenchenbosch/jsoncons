@@ -2027,6 +2027,13 @@ namespace detail {
                             node_type& ndtype,
                             result_options options) const = 0;
 
+        virtual reference get(dynamic_resources<Json,JsonReference>& resources,
+                              reference /*root*/,
+                              reference /*val*/) const 
+        {
+            return resources.null_value();
+        }
+
         virtual void append_selector(std::unique_ptr<selector_base>&&) 
         {
         }
