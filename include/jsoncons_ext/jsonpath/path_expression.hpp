@@ -2785,7 +2785,524 @@ namespace detail {
                 s.append("\n");
                 s.append(level*2, ' ');
             }
-            s.append("path_expression\n");
+            s.append("filter_path_expression\n");
+            for (const auto& item : token_list_)
+            {
+                s.append(item.to_string(level+1));
+            }
+
+            return s;
+
+        }
+    };
+
+    template <class Json,class JsonReference>
+    class filter_path_expression
+    {
+    public:
+        using char_type = typename Json::char_type;
+        using string_type = std::basic_string<char_type,std::char_traits<char_type>>;
+        using string_view_type = typename Json::string_view_type;
+        using path_node_type = path_node<Json,JsonReference>;
+        using path_node_less_type = path_node_less<Json,JsonReference>;
+        using nodups_path_node_equal_type = nodups_path_node_equal<Json,JsonReference>;
+        using reference = typename path_node_type::reference;
+        using pointer = typename path_node_type::pointer;
+        using token_type = token<Json,JsonReference>;
+        using reference_arg_type = typename std::conditional<std::is_const<typename std::remove_reference<JsonReference>::type>::value,
+            const_reference_arg_t,reference_arg_t>::type;
+        using path_component_type = path_component<char_type>;
+    private:
+        std::vector<token_type> token_list_;
+    public:
+
+        filter_path_expression()
+        {
+        }
+
+        filter_path_expression(filter_path_expression&& expr)
+            : token_list_(std::move(expr.token_list_))
+        {
+        }
+
+        filter_path_expression(std::vector<token_type>&& token_stack)
+            : token_list_(std::move(token_stack))
+        {
+        }
+
+        filter_path_expression& operator=(filter_path_expression&& expr) = default;
+
+        Json evaluate(dynamic_resources<Json,JsonReference>& resources, 
+                      const std::vector<path_component_type>& ipath, 
+                      reference root,
+                      reference current,
+                      result_options options) const
+        {
+            Json result(json_array_arg);
+
+            auto callback = [&result](const std::vector<path_component_type>&, reference val)
+            {
+                result.push_back(val);
+            };
+            std::error_code ec;
+
+            std::vector<node_set<Json,JsonReference>> stack;
+            std::vector<pointer> arg_stack;
+            std::vector<path_component_type> path(ipath);
+
+            //std::cout << "EVALUATE BEGIN\n";
+
+            //std::cout << "token list\n";
+            //for (auto& tok : token_list_)
+            //{
+            //    std::cout << tok.to_string() << "\n";
+            //}
+            //std::cout << "end token list\n";
+
+            if (!token_list_.empty())
+            {
+                for (auto& tok : token_list_)
+                {
+                    //std::cout << "Token: " << tok.to_string() << "\n";
+                    switch (tok.type())
+                    { 
+                        case token_kind::literal:
+                        {
+                            stack.emplace_back(path_node_type(&tok.get_value(reference_arg_type(), resources)));
+                            break;
+                        }
+                        case token_kind::unary_operator:
+                        {
+                            JSONCONS_ASSERT(stack.size() >= 1);
+                            pointer ptr = stack.back().to_pointer(resources);
+                            stack.pop_back();
+
+                            reference r = tok.unary_operator_->evaluate(resources, *ptr, ec);
+                            stack.emplace_back(path_node_type(std::addressof(r)));
+                            break;
+                        }
+                        case token_kind::binary_operator:
+                        {
+                            JSONCONS_ASSERT(stack.size() >= 2);
+                            pointer rhs = stack.back().to_pointer(resources);
+                            stack.pop_back();
+                            pointer lhs = stack.back().to_pointer(resources);
+                            stack.pop_back();
+
+                            reference r = tok.binary_operator_->evaluate(resources, *lhs, *rhs, ec);
+                            stack.emplace_back(path_node_type(std::addressof(r)));
+                            break;
+                        }
+                        case token_kind::root_node:
+                            //std::cout << "root: " << root << "\n";
+                            stack.emplace_back(path_node_type(std::addressof(root)));
+                            break;
+                        case token_kind::current_node:
+                            //std::cout << "current: " << current << "\n";
+                            stack.emplace_back(path_node_type(std::addressof(current)));
+                            break;
+                        case token_kind::argument:
+                            JSONCONS_ASSERT(!stack.empty());
+                            //std::cout << "argument stack items " << stack.size() << "\n";
+                            //for (auto& item : stack)
+                            //{
+                            //    std::cout << *item.to_pointer(resources) << "\n";
+                            //}
+                            //std::cout << "\n";
+                            arg_stack.push_back(stack.back().to_pointer(resources));
+                            //for (auto& item : arg_stack)
+                            //{
+                            //    std::cout << *item << "\n";
+                            //}
+                            //std::cout << "\n";
+                            stack.pop_back();
+                            break;
+                        case token_kind::function:
+                        {
+                            if (tok.function_->arity() && *(tok.function_->arity()) != arg_stack.size())
+                            {
+                                //ec = jmespath_errc::invalid_arity;
+                                return resources.null_value();
+                            }
+                            //std::cout << "function arg stack:\n";
+                            //for (auto& item : arg_stack)
+                            //{
+                            //    std::cout << *item << "\n";
+                            //}
+                            //std::cout << "\n";
+
+                            reference r = tok.function_->evaluate(resources, arg_stack, ec);
+                            if (ec)
+                            {
+                                return resources.null_value();
+                            }
+                            //std::cout << "function result: " << r << "\n";
+                            arg_stack.clear();
+                            stack.emplace_back(path_node_type(std::addressof(r)));
+                            break;
+                        }
+                        case token_kind::selector:
+                        {
+                            JSONCONS_ASSERT(!stack.empty());
+                            pointer ptr = nullptr;
+                            //for (auto& item : stack)
+                            //{
+                                //std::cout << "selector stack input:\n";
+                                //switch (item.tag)
+                                //{
+                                //    case node_set_tag::single:
+                                //        std::cout << "single: " << *(item.node.ptr) << "\n";
+                                //        break;
+                                //    case node_set_tag::multi:
+                                //        for (auto& node : stack.back().nodes)
+                                //        {
+                                //            std::cout << "multi: " << *node.ptr << "\n";
+                                //        }
+                                //        break;
+                                //    default:
+                                //        break;
+                            //}
+                            //std::cout << "\n";
+                            //}
+                            switch (stack.back().tag)
+                            {
+                                case node_set_tag::single:
+                                    ptr = stack.back().node.ptr;
+                                    break;
+                                case node_set_tag::multi:
+                                    if (!stack.back().nodes.empty())
+                                    {
+                                        ptr = stack.back().nodes.back().ptr;
+                                    }
+                                    ptr = stack.back().to_pointer(resources);
+                                    break;
+                                default:
+                                    break;
+                            }
+                            if (ptr)
+                            {
+                                //std::cout << "selector item: " << *ptr << "\n";
+                                stack.pop_back();
+                                std::vector<path_node_type> temp;
+                                node_type ndtype = node_type();
+                                tok.selector_->select(resources, path, root, *ptr, temp, ndtype, options);
+
+                                if ((options & result_options::sort) == result_options::sort)
+                                {
+                                    std::sort(temp.begin(), temp.end(), path_node_less_type());
+                                }
+
+                                if ((options & result_options::nodups) == result_options::nodups)
+                                {
+                                    if ((options & result_options::sort) == result_options::sort)
+                                    {
+                                        auto last = std::unique(temp.begin(),temp.end(),nodups_path_node_equal_type());
+                                        temp.erase(last,temp.end());
+                                        stack.emplace_back(std::move(temp), ndtype);
+                                    }
+                                    else
+                                    {
+                                        std::vector<path_node_type> index(temp);
+                                        std::sort(index.begin(), index.end(), path_node_less_type());
+                                        auto last = std::unique(index.begin(),index.end(),nodups_path_node_equal_type());
+                                        index.erase(last,index.end());
+
+                                        std::vector<path_node_type> temp2;
+                                        temp2.reserve(index.size());
+                                        for (auto&& node : temp)
+                                        {
+                                            //std::cout << "node: " << node.path << ", " << *node.ptr << "\n";
+                                            auto it = std::lower_bound(index.begin(),index.end(),node, path_node_less_type());
+
+                                            if (it != index.end() && it->path == node.path) 
+                                            {
+                                                temp2.emplace_back(std::move(node));
+                                                index.erase(it);
+                                            }
+                                        }
+                                        stack.emplace_back(std::move(temp2), ndtype);
+                                    }
+                                }
+                                else
+                                {
+                                    stack.emplace_back(std::move(temp), ndtype);
+                                }
+
+                                //std::cout << "selector output\n";
+                                //for (auto& item : temp)
+                                //{
+                                //    std::cout << *item.ptr << "\n";
+                                //}
+                                //std::cout << "\n";
+
+                            }
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+                }
+            }
+            for (auto& item : stack)
+            {
+                switch (item.tag)
+                {
+                    case node_set_tag::single:
+                        callback(item.node.path, *item.node.ptr);
+                        break;
+                    case node_set_tag::multi:
+                        for (auto& node : item.nodes)
+                        {
+                            callback(node.path, *node.ptr);
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            //std::cout << "EVALUATE END\n";
+
+            return result;
+        }
+
+        template <class Callback>
+        typename std::enable_if<jsoncons::detail::is_binary_function_object<Callback,const std::vector<path_component_type>&,reference>::value,void>::type
+        evaluate(dynamic_resources<Json,JsonReference>& resources, 
+                 const std::vector<path_component_type>& ipath, 
+                 reference root,
+                 reference current, 
+                 Callback callback,
+                 result_options options) const
+        {
+            std::error_code ec;
+
+            std::vector<node_set<Json,JsonReference>> stack;
+            std::vector<pointer> arg_stack;
+            std::vector<path_component_type> path(ipath);
+            Json result(json_array_arg);
+
+            //std::cout << "EVALUATE BEGIN\n";
+
+            //std::cout << "token list\n";
+            //for (auto& tok : token_list_)
+            //{
+            //    std::cout << tok.to_string() << "\n";
+            //}
+            //std::cout << "end token list\n";
+
+            if (!token_list_.empty())
+            {
+                for (auto& tok : token_list_)
+                {
+                    //std::cout << "Token: " << tok.to_string() << "\n";
+                    switch (tok.type())
+                    { 
+                        case token_kind::literal:
+                        {
+                            stack.emplace_back(path_node_type(&tok.get_value(reference_arg_type(), resources)));
+                            break;
+                        }
+                        case token_kind::unary_operator:
+                        {
+                            JSONCONS_ASSERT(stack.size() >= 1);
+                            pointer ptr = stack.back().to_pointer(resources);
+                            stack.pop_back();
+
+                            reference r = tok.unary_operator_->evaluate(resources, *ptr, ec);
+                            stack.emplace_back(path_node_type(std::addressof(r)));
+                            break;
+                        }
+                        case token_kind::binary_operator:
+                        {
+                            JSONCONS_ASSERT(stack.size() >= 2);
+                            pointer rhs = stack.back().to_pointer(resources);
+                            stack.pop_back();
+                            pointer lhs = stack.back().to_pointer(resources);
+                            stack.pop_back();
+
+                            reference r = tok.binary_operator_->evaluate(resources, *lhs, *rhs, ec);
+                            stack.emplace_back(path_node_type(std::addressof(r)));
+                            break;
+                        }
+                        case token_kind::root_node:
+                            //std::cout << "root: " << root << "\n";
+                            stack.emplace_back(path_node_type(std::addressof(root)));
+                            break;
+                        case token_kind::current_node:
+                            //std::cout << "current: " << current << "\n";
+                            stack.emplace_back(path_node_type(std::addressof(current)));
+                            break;
+                        case token_kind::argument:
+                            JSONCONS_ASSERT(!stack.empty());
+                            //std::cout << "argument stack items " << stack.size() << "\n";
+                            //for (auto& item : stack)
+                            //{
+                            //    std::cout << *item.to_pointer(resources) << "\n";
+                            //}
+                            //std::cout << "\n";
+                            arg_stack.push_back(stack.back().to_pointer(resources));
+                            //for (auto& item : arg_stack)
+                            //{
+                            //    std::cout << *item << "\n";
+                            //}
+                            //std::cout << "\n";
+                            stack.pop_back();
+                            break;
+                        case token_kind::function:
+                        {
+                            if (tok.function_->arity() && *(tok.function_->arity()) != arg_stack.size())
+                            {
+                                //ec = jmespath_errc::invalid_arity;
+                                return;
+                            }
+                            //std::cout << "function arg stack:\n";
+                            //for (auto& item : arg_stack)
+                            //{
+                            //    std::cout << *item << "\n";
+                            //}
+                            //std::cout << "\n";
+
+                            reference r = tok.function_->evaluate(resources, arg_stack, ec);
+                            if (ec)
+                            {
+                                return;
+                            }
+                            //std::cout << "function result: " << r << "\n";
+                            arg_stack.clear();
+                            stack.emplace_back(path_node_type(std::addressof(r)));
+                            break;
+                        }
+                        case token_kind::selector:
+                        {
+                            JSONCONS_ASSERT(!stack.empty());
+                            pointer ptr = nullptr;
+                            //for (auto& item : stack)
+                            //{
+                                //std::cout << "selector stack input:\n";
+                                //switch (item.tag)
+                                //{
+                                //    case node_set_tag::single:
+                                //        std::cout << "single: " << *(item.node.ptr) << "\n";
+                                //        break;
+                                //    case node_set_tag::multi:
+                                //        for (auto& node : stack.back().nodes)
+                                //        {
+                                //            std::cout << "multi: " << *node.ptr << "\n";
+                                //        }
+                                //        break;
+                                //    default:
+                                //        break;
+                            //}
+                            //std::cout << "\n";
+                            //}
+                            switch (stack.back().tag)
+                            {
+                                case node_set_tag::single:
+                                    ptr = stack.back().node.ptr;
+                                    break;
+                                case node_set_tag::multi:
+                                    if (!stack.back().nodes.empty())
+                                    {
+                                        ptr = stack.back().nodes.back().ptr;
+                                    }
+                                    ptr = stack.back().to_pointer(resources);
+                                    break;
+                                default:
+                                    break;
+                            }
+                            if (ptr)
+                            {
+                                //std::cout << "selector item: " << *ptr << "\n";
+                                stack.pop_back();
+                                std::vector<path_node_type> temp;
+                                node_type ndtype = node_type();
+                                tok.selector_->select(resources, path, root, *ptr, temp, ndtype, options);
+
+                                if ((options & result_options::sort) == result_options::sort)
+                                {
+                                    std::sort(temp.begin(), temp.end(), path_node_less_type());
+                                }
+
+                                if ((options & result_options::nodups) == result_options::nodups)
+                                {
+                                    if ((options & result_options::sort) == result_options::sort)
+                                    {
+                                        auto last = std::unique(temp.begin(),temp.end(),nodups_path_node_equal_type());
+                                        temp.erase(last,temp.end());
+                                        stack.emplace_back(std::move(temp), ndtype);
+                                    }
+                                    else
+                                    {
+                                        std::vector<path_node_type> index(temp);
+                                        std::sort(index.begin(), index.end(), path_node_less_type());
+                                        auto last = std::unique(index.begin(),index.end(),nodups_path_node_equal_type());
+                                        index.erase(last,index.end());
+
+                                        std::vector<path_node_type> temp2;
+                                        temp2.reserve(index.size());
+                                        for (auto&& node : temp)
+                                        {
+                                            //std::cout << "node: " << node.path << ", " << *node.ptr << "\n";
+                                            auto it = std::lower_bound(index.begin(),index.end(),node, path_node_less_type());
+
+                                            if (it != index.end() && it->path == node.path) 
+                                            {
+                                                temp2.emplace_back(std::move(node));
+                                                index.erase(it);
+                                            }
+                                        }
+                                        stack.emplace_back(std::move(temp2), ndtype);
+                                    }
+                                }
+                                else
+                                {
+                                    stack.emplace_back(std::move(temp), ndtype);
+                                }
+
+                                //std::cout << "selector output\n";
+                                //for (auto& item : temp)
+                                //{
+                                //    std::cout << *item.ptr << "\n";
+                                //}
+                                //std::cout << "\n";
+
+                            }
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+                }
+            }
+            for (auto& item : stack)
+            {
+                switch (item.tag)
+                {
+                    case node_set_tag::single:
+                        callback(item.node.path, *item.node.ptr);
+                        break;
+                    case node_set_tag::multi:
+                        for (auto& node : item.nodes)
+                        {
+                            callback(node.path, *node.ptr);
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            //std::cout << "EVALUATE END\n";
+        }
+
+        std::string to_string(int level) const
+        {
+            std::string s;
+            if (level > 0)
+            {
+                s.append("\n");
+                s.append(level*2, ' ');
+            }
+            s.append("filter_path_expression\n");
             for (const auto& item : token_list_)
             {
                 s.append(item.to_string(level+1));

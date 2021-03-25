@@ -190,6 +190,7 @@ namespace jsoncons { namespace jsonpath {
         using selector_base_type = selector_base<Json,JsonReference>;
         using token_type = token<Json,JsonReference>;
         using path_expression_type = path_expression<Json,JsonReference>;
+        using filter_path_expression_type = filter_path_expression<Json,JsonReference>;
         using path_component_type = path_component<char_type>;
 
     private:
@@ -835,13 +836,13 @@ namespace jsoncons { namespace jsonpath {
 
         class filter_selector final : public path_selector
         {
-            path_expression_type expr_;
+            filter_path_expression_type expr_;
 
         public:
             using path_component_type = typename selector_base_type::path_component_type;
             using path_selector::generate_path;
 
-            filter_selector(path_expression_type&& expr)
+            filter_selector(filter_path_expression_type&& expr)
                 : path_selector(), expr_(std::move(expr))
             {
             }
@@ -859,11 +860,20 @@ namespace jsoncons { namespace jsonpath {
                     for (std::size_t i = 0; i < val.size(); ++i)
                     {
                         std::vector<path_node_type> temp;
-                        auto callback = [&temp](const std::vector<path_component_type>& p, reference v)
+                        //auto callback = [&temp](const std::vector<path_component_type>& p, reference v)
+                        //{
+                        //    temp.emplace_back(p, std::addressof(v));
+                        //};
+                        //expr_.evaluate(resources, generate_path(path, i, options), root, val[i], callback, options);
+                        //if (is_true(temp))
+                        //{
+                        //    this->evaluate_tail(resources, generate_path(path,i,options), root, val[i], nodes, ndtype, options);
+                        //}
+                        Json j = expr_.evaluate(resources, generate_path(path, i, options), root, val[i], options);
+                        for (auto& item : j.array_range())
                         {
-                            temp.emplace_back(p, std::addressof(v));
-                        };
-                        expr_.evaluate(resources, generate_path(path, i, options), root, val[i], callback, options);
+                            temp.emplace_back(std::vector<path_component_type>(), std::addressof(item));
+                        }
                         if (is_true(temp))
                         {
                             this->evaluate_tail(resources, generate_path(path,i,options), root, val[i], nodes, ndtype, options);
@@ -875,11 +885,17 @@ namespace jsoncons { namespace jsonpath {
                     for (auto& member : val.object_range())
                     {
                         std::vector<path_node_type> temp;
-                        auto callback = [&temp](const std::vector<path_component_type>& p, reference v)
+                        Json j = expr_.evaluate(resources, generate_path(path, member.key(), options), root, member.value(), options);
+                        for (auto& item : j.array_range())
                         {
-                            temp.emplace_back(p, std::addressof(v));
-                        };
-                        expr_.evaluate(resources, generate_path(path, member.key(), options), root, member.value(), callback, options);
+                            temp.emplace_back(std::vector<path_component_type>(), std::addressof(item));
+                        }
+
+                        //auto callback = [&temp](const std::vector<path_component_type>& p, reference v)
+                        //{
+                        //    temp.emplace_back(p, std::addressof(v));
+                        //};
+                        //expr_.evaluate(resources, generate_path(path, member.key(), options), root, member.value(), callback, options);
                         if (is_true(temp))
                         {
                             this->evaluate_tail(resources, generate_path(path,member.key(),options), root, member.value(), nodes, ndtype, options);
@@ -3130,11 +3146,11 @@ namespace jsoncons { namespace jsonpath {
 
                     if (!output_stack_.empty() && output_stack_.back().is_path())
                     {
-                        output_stack_.back().selector_->append_selector(jsoncons::make_unique<filter_selector>(path_expression_type(std::move(toks))));
+                        output_stack_.back().selector_->append_selector(jsoncons::make_unique<filter_selector>(filter_path_expression_type(std::move(toks))));
                     }
                     else
                     {
-                        output_stack_.emplace_back(token_type(jsoncons::make_unique<filter_selector>(path_expression_type(std::move(toks)))));
+                        output_stack_.emplace_back(token_type(jsoncons::make_unique<filter_selector>(filter_path_expression_type(std::move(toks)))));
                     }
                     break;
                 }
